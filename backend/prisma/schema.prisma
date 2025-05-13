@@ -1,0 +1,48 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum EventCategory {
+  WORK
+  PERSONAL
+  MEETING
+}
+
+enum RecurrencePattern {
+  NONE
+  DAILY
+  WEEKLY
+}
+
+model Event {
+  id                String    @id @default(uuid())
+  title             String
+  startTime         DateTime // Stored in UTC
+  endTime           DateTime // Stored in UTC
+  category          EventCategory
+  recurrencePattern RecurrencePattern
+  weeklyRecurrenceDays Int[]     // Array of integers (0-6 for Sun-Sat), only for WEEKLY
+  recurrenceEndDate DateTime? // Optional: when recurrence stops (UTC)
+  timezone          String    // Original IANA timezone of event creation for reference
+
+  // For handling exceptions/modifications to recurring events
+  parentId          String?   // If this is an exception, it points to the ID of the master recurring event
+  originalStartTime DateTime? // If this is an exception, this is the UTC start time of the instance it's an exception FOR
+  isException       Boolean   @default(false) // True if this event is a modified instance of a recurring series
+  isDeletedInstance Boolean   @default(false) // True if this specific instance of a recurring event was marked as deleted
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Relation for exceptions: an event can be a parent to many exceptions
+  parentEvent       Event?    @relation("RecurringExceptions", fields: [parentId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  exceptions        Event[]   @relation("RecurringExceptions") // List of exceptions derived from this master event
+
+  @@index([parentId])
+  @@index([startTime, endTime]) // For querying events in a range
+}
