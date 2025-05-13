@@ -1,0 +1,66 @@
+version: "3.8"
+
+services:
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: calendar-api
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    depends_on:
+      - db
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/calendar?schema=public
+      - JWT_SECRET=calendar_app_secret_key_for_development
+      - PORT=3001
+      - CORS_ORIGIN=http://localhost:3000
+      - LOG_LEVEL=info
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - calendar-network
+
+  db:
+    image: postgres:15-alpine
+    container_name: calendar-db
+    restart: unless-stopped
+    ports:
+      - "5433:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=calendar
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - calendar-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # For development only - Uncomment if you need a DB admin UI
+  # pgadmin:
+  #   image: dpage/pgadmin4
+  #   container_name: calendar-pgadmin
+  #   restart: unless-stopped
+  #   environment:
+  #     - PGADMIN_DEFAULT_EMAIL=admin@example.com
+  #     - PGADMIN_DEFAULT_PASSWORD=admin
+  #   ports:
+  #     - "5050:80"
+  #   depends_on:
+  #     - db
+  #   networks:
+  #     - calendar-network
+
+networks:
+  calendar-network:
+    driver: bridge
+
+volumes:
+  postgres-data:

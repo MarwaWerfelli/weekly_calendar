@@ -1,0 +1,59 @@
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  events    Event[]
+}
+
+model Event {
+  id                   String                @id @default(uuid())
+  title                String
+  description          String?
+  startTime            DateTime
+  endTime              DateTime
+  color                String                @default("blue") // "blue", "green", "orange"
+  eventType            String                @default("Work") // "Work", "Personal", "Meeting"
+  timezone             String                @default("UTC") // Store the timezone for proper display
+  userId               String
+  user                 User                  @relation(fields: [userId], references: [id])
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+
+  // Recurrence fields
+  isRecurring          Boolean               @default(false)
+  recurrenceType       String?               // "NONE", "DAILY", "WEEKLY"
+  recurrenceDays       String                @default("") // Comma-separated list of days: "0,1,3" (0=Sunday, 1=Monday, ... 6=Saturday)
+  exceptions           RecurrenceException[]
+
+  @@index([startTime, endTime])
+  @@index([userId])
+}
+
+model RecurrenceException {
+  id          String   @id @default(uuid())
+  eventId     String
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  exceptionDate DateTime
+  isDeleted   Boolean  @default(true)
+  newStartTime DateTime?
+  newEndTime   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([eventId, exceptionDate])
+  @@index([eventId])
+  @@index([exceptionDate])
+}
+
