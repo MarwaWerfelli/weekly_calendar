@@ -1,19 +1,40 @@
 // src/models/types.ts
 
-import { Event, User } from '@prisma/client';
+import { Event } from '@prisma/client';
 
-// Define event types locally
-export enum EventType {
+// Event types
+export enum EVENT_TYPES {
   WORK = 'Work',
   PERSONAL = 'Personal',
   MEETING = 'Meeting',
 }
 
-// Define recurrence types locally
-export enum RecurrenceType {
-  NONE = 'NONE',
-  DAILY = 'DAILY',
-  WEEKLY = 'WEEKLY',
+// Event colors - these should match the front-end colors
+export const EVENT_COLORS: Record<EVENT_TYPES, string> = {
+  [EVENT_TYPES.WORK]: '#4285F4', // Blue
+  [EVENT_TYPES.PERSONAL]: '#34A853', // Green
+  [EVENT_TYPES.MEETING]: '#FBBC05', // Orange
+};
+
+// Recurrence patterns
+export type RecurrencePattern = 'None' | 'Daily' | 'Weekly';
+
+// Recurrence rule
+export interface RecurrenceRule {
+  pattern: RecurrencePattern;
+  daysOfWeek?: number[]; // For weekly recurrence (0 = Sunday, 1 = Monday, etc.)
+}
+
+// Calendar event
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  description?: string;
+  start: Date;
+  end: Date;
+  color: string;
+  eventType: string;
+  recurrence?: RecurrenceRule;
 }
 
 // Request Types
@@ -22,9 +43,11 @@ export interface CreateEventDto {
   description?: string;
   startTime: string; // ISO date string
   endTime: string; // ISO date string
-  type: EventType;
-  recurrenceType: RecurrenceType;
-  recurrenceRule?: RecurrenceRuleDto;
+  eventType: string;
+  recurrence?: {
+    pattern: RecurrencePattern;
+    daysOfWeek?: number[];
+  };
 }
 
 export interface UpdateEventDto {
@@ -32,15 +55,11 @@ export interface UpdateEventDto {
   description?: string;
   startTime?: string; // ISO date string
   endTime?: string; // ISO date string
-  type?: EventType;
-  recurrenceType?: RecurrenceType;
-  recurrenceRule?: RecurrenceRuleDto;
-}
-
-export interface RecurrenceRuleDto {
-  daysOfWeek?: number[]; // For WEEKLY: 0=Sunday, 1=Monday, etc.
-  endDate?: string; // ISO date string
-  count?: number; // Number of occurrences
+  eventType?: string;
+  recurrence?: {
+    pattern: RecurrencePattern;
+    daysOfWeek?: number[];
+  };
 }
 
 export interface UpdateSingleOccurrenceDto {
@@ -50,53 +69,27 @@ export interface UpdateSingleOccurrenceDto {
 }
 
 export interface EventQueryParams {
-  startDate: string; // ISO date string
-  endDate: string; // ISO date string
-  type?: EventType;
+  date?: string; // ISO date string
+  timezone?: string;
 }
 
 // Response Types
 export interface EventOccurrence {
   id: string;
+  originalEventId: string;
   title: string;
-  description?: string;
-  startTime: string; // ISO date string
-  endTime: string; // ISO date string
-  type: EventType;
+  description: string | null;
+  start: Date;
+  end: Date;
+  color: string;
+  eventType: string;
   isRecurring: boolean;
   isException: boolean;
-  originalEventId?: string;
+  exceptionId?: string;
+  recurrence?: RecurrenceRule;
 }
 
 // Enhanced Types with Computed Properties
 export interface EventWithOccurrences extends Event {
   occurrences: EventOccurrence[];
-}
-
-// Auth Types
-export interface RegisterUserDto {
-  email: string;
-  password: string;
-  name?: string;
-}
-
-export interface LoginUserDto {
-  email: string;
-  password: string;
-}
-
-export interface UserResponse {
-  id: string;
-  email: string;
-  name?: string;
-}
-
-export interface AuthResponse {
-  user: UserResponse;
-  token: string;
-}
-
-// Express Request Extension
-export interface RequestWithUser extends Express.Request {
-  user?: User;
 }

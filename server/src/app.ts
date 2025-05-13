@@ -2,7 +2,6 @@ import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import eventRoutes from './routes/eventRoutes';
-import userRoutes from './routes/userRoutes';
 import { setupSwagger } from './swagger';
 
 dotenv.config();
@@ -17,7 +16,6 @@ app.get('/', (_: Request, res: Response) => {
 });
 
 app.use('/api/events', eventRoutes);
-app.use('/api/users', userRoutes);
 
 // Setup Swagger documentation
 setupSwagger(app);

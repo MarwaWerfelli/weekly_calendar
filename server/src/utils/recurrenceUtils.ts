@@ -1,6 +1,5 @@
-// Import RecurrenceType from local models instead of Prisma
-import { RecurrenceType } from '../models/type';
 import { addDays, getDay, startOfDay, isWithinInterval } from 'date-fns';
+import { RecurrencePattern } from '../models/type';
 
 /**
  * Calculates if a given date falls on one of the days specified in recurrenceDays
@@ -21,11 +20,11 @@ export function isRecurrenceDay(date: Date, recurrenceDays: number[]): boolean {
  */
 export function getNextOccurrence(
   baseDate: Date,
-  recurrenceType: RecurrenceType,
+  recurrenceType: RecurrencePattern,
   recurrenceDays: number[],
   afterDate: Date,
 ): Date | null {
-  if (recurrenceType === RecurrenceType.NONE) {
+  if (recurrenceType === 'None') {
     return null;
   }
 
@@ -36,7 +35,7 @@ export function getNextOccurrence(
   maxEndDate.setDate(maxEndDate.getDate() + 365);
 
   // For daily recurrence
-  if (recurrenceType === RecurrenceType.DAILY) {
+  if (recurrenceType === 'Daily') {
     // If afterDate is before or equal to baseDate, return baseDate
     if (afterDate <= baseDate) {
       return baseDate;
@@ -47,7 +46,7 @@ export function getNextOccurrence(
   }
 
   // For weekly recurrence
-  if (recurrenceType === RecurrenceType.WEEKLY) {
+  if (recurrenceType === 'Weekly') {
     // If recurrenceDays is empty or invalid, return null
     if (!recurrenceDays || recurrenceDays.length === 0) {
       return null;
@@ -86,7 +85,7 @@ export function getNextOccurrence(
 export function generateOccurrences(
   baseDate: Date,
   duration: number,
-  recurrenceType: RecurrenceType,
+  recurrenceType: RecurrencePattern,
   recurrenceDays: number[],
   startRange: Date,
   endRange: Date,
@@ -94,7 +93,7 @@ export function generateOccurrences(
 ): { start: Date; end: Date; isException: boolean; exceptionData?: any }[] {
   const occurrences: { start: Date; end: Date; isException: boolean; exceptionData?: any }[] = [];
 
-  if (recurrenceType === RecurrenceType.NONE) {
+  if (recurrenceType === 'None') {
     // For non-recurring events, check if the baseDate falls within our range
     if (isWithinInterval(baseDate, { start: startRange, end: endRange })) {
       occurrences.push({
@@ -113,9 +112,9 @@ export function generateOccurrences(
   if (baseDate < startRange) {
     const checkFromDate = new Date(baseDate);
     while (checkFromDate < startRange) {
-      if (recurrenceType === RecurrenceType.DAILY) {
+      if (recurrenceType === 'Daily') {
         checkFromDate.setDate(checkFromDate.getDate() + 1);
-      } else if (recurrenceType === RecurrenceType.WEEKLY) {
+      } else if (recurrenceType === 'Weekly') {
         checkFromDate.setDate(checkFromDate.getDate() + 1);
 
         if (
@@ -136,9 +135,9 @@ export function generateOccurrences(
   while (currentDate <= endRange) {
     let shouldInclude = false;
 
-    if (recurrenceType === RecurrenceType.DAILY) {
+    if (recurrenceType === 'Daily') {
       shouldInclude = true;
-    } else if (recurrenceType === RecurrenceType.WEEKLY) {
+    } else if (recurrenceType === 'Weekly') {
       shouldInclude = isRecurrenceDay(currentDate, recurrenceDays);
     }
 
@@ -173,9 +172,9 @@ export function generateOccurrences(
     }
 
     // Move to the next occurrence based on recurrence type
-    if (recurrenceType === RecurrenceType.DAILY) {
+    if (recurrenceType === 'Daily') {
       currentDate.setDate(currentDate.getDate() + 1);
-    } else if (recurrenceType === RecurrenceType.WEEKLY) {
+    } else if (recurrenceType === 'Weekly') {
       currentDate.setDate(currentDate.getDate() + 1);
     }
   }

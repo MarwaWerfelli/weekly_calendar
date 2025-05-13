@@ -12,11 +12,6 @@ const eventController = new EventController();
  *     tags: [Events]
  *     parameters:
  *       - in: query
- *         name: userId
- *         schema:
- *           type: string
- *         description: User ID (optional - if not provided, returns events for all users)
- *       - in: query
  *         name: date
  *         schema:
  *           type: string
@@ -60,26 +55,31 @@ const eventController = new EventController();
  *                       description:
  *                         type: string
  *                         nullable: true
- *                       startTime:
+ *                       start:
  *                         type: string
  *                         format: date-time
- *                       endTime:
+ *                       end:
  *                         type: string
  *                         format: date-time
  *                       color:
  *                         type: string
  *                       eventType:
  *                         type: string
- *                       timezone:
- *                         type: string
  *                       isRecurring:
  *                         type: boolean
  *                       isException:
  *                         type: boolean
- *                       userId:
- *                         type: string
- *                       userName:
- *                         type: string
+ *                       recurrence:
+ *                         type: object
+ *                         nullable: true
+ *                         properties:
+ *                           pattern:
+ *                             type: string
+ *                             enum: ['None', 'Daily', 'Weekly']
+ *                           daysOfWeek:
+ *                             type: array
+ *                             items:
+ *                               type: integer
  */
 router.get('/', eventController.getWeekEvents.bind(eventController));
 
@@ -99,7 +99,6 @@ router.get('/', eventController.getWeekEvents.bind(eventController));
  *               - title
  *               - startTime
  *               - endTime
- *               - userId
  *             properties:
  *               title:
  *                 type: string
@@ -111,34 +110,30 @@ router.get('/', eventController.getWeekEvents.bind(eventController));
  *               endTime:
  *                 type: string
  *                 format: date-time
- *               color:
- *                 type: string
- *                 enum: [blue, green, orange]
  *               eventType:
  *                 type: string
  *                 enum: [Work, Personal, Meeting]
- *               userId:
- *                 type: string
  *               timezone:
  *                 type: string
- *               isRecurring:
- *                 type: boolean
- *               recurrenceType:
- *                 type: string
- *                 enum: [NONE, DAILY, WEEKLY]
- *               recurrenceDays:
- *                 type: array
- *                 items:
- *                   type: integer
- *                   minimum: 0
- *                   maximum: 6
+ *               recurrence:
+ *                 type: object
+ *                 properties:
+ *                   pattern:
+ *                     type: string
+ *                     enum: [None, Daily, Weekly]
+ *                   daysOfWeek:
+ *                     type: array
+ *                     items:
+ *                       type: integer
+ *                       minimum: 0
+ *                       maximum: 6
  *     responses:
  *       201:
  *         description: Event created successfully
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/Event'
+ *               $ref: '#/components/schemas/CalendarEvent'
  *       400:
  *         description: Invalid input
  */
@@ -173,27 +168,30 @@ router.post('/', eventController.createEvent.bind(eventController));
  *               endTime:
  *                 type: string
  *                 format: date-time
- *               color:
- *                 type: string
  *               eventType:
  *                 type: string
+ *                 enum: [Work, Personal, Meeting]
  *               timezone:
  *                 type: string
- *               isRecurring:
- *                 type: boolean
- *               recurrenceType:
- *                 type: string
- *               recurrenceDays:
- *                 type: array
- *                 items:
- *                   type: integer
+ *               recurrence:
+ *                 type: object
+ *                 properties:
+ *                   pattern:
+ *                     type: string
+ *                     enum: [None, Daily, Weekly]
+ *                   daysOfWeek:
+ *                     type: array
+ *                     items:
+ *                       type: integer
+ *                       minimum: 0
+ *                       maximum: 6
  *     responses:
  *       200:
  *         description: Event updated successfully
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/Event'
+ *               $ref: '#/components/schemas/CalendarEvent'
  *       404:
  *         description: Event not found
  */
@@ -215,6 +213,13 @@ router.put('/:id', eventController.updateEvent.bind(eventController));
  *     responses:
  *       200:
  *         description: Event deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
  *       404:
  *         description: Event not found
  */

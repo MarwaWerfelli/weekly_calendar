@@ -1,15 +1,13 @@
 import { Event } from '@prisma/client';
-import { isSameDay, startOfDay, getDay } from 'date-fns';
-import { fromUTC, toUTC } from '../utils/dateUtils';
-import { eventsConflict } from '../utils/recurrenceUtils';
+import { isSameDay, getDay } from 'date-fns';
 import prisma from '../prismaClient';
-
-// Define recurrence types as constants
-export const RecurrenceType = {
-  NONE: 'NONE',
-  DAILY: 'DAILY',
-  WEEKLY: 'WEEKLY',
-};
+import {
+  CalendarEvent,
+  EVENT_COLORS,
+  EVENT_TYPES,
+  EventOccurrence,
+  RecurrencePattern,
+} from '../models/type';
 
 export interface EventWithExceptions extends Event {
   exceptions: {
@@ -19,28 +17,6 @@ export interface EventWithExceptions extends Event {
     newStartTime: Date | null;
     newEndTime: Date | null;
   }[];
-  user?: {
-    id: string;
-    name: string;
-    email: string;
-  };
-}
-
-export interface EventOccurrence {
-  id: string;
-  originalEventId: string;
-  title: string;
-  description: string | null;
-  startTime: Date;
-  endTime: Date;
-  color: string;
-  eventType: string;
-  timezone: string;
-  isRecurring: boolean;
-  isException: boolean;
-  exceptionId?: string;
-  userId?: string;
-  userName?: string;
 }
 
 export class EventService {
@@ -54,39 +30,29 @@ export class EventService {
   }
 
   /**
-   * Get all events for a specific user and date range
-   * If userId is not provided, returns events for all users
+   * Get all events for a date range
    */
-  async getEventsByDateRange(
-    userId: string | null,
-    startDate: Date,
-    endDate: Date,
-    timezone: string = 'UTC',
-  ): Promise<EventOccurrence[]> {
+  async getEventsByDateRange(startDate: Date, endDate: Date): Promise<EventOccurrence[]> {
     // Get all events that might have occurrences in the date range
-    const whereClause: any = {
-      OR: [
-        // Non-recurring events that fall within the date range
-        {
-          isRecurring: false,
-          startTime: { lte: endDate },
-          endTime: { gte: startDate },
-        },
-        // All recurring events (we'll filter their occurrences later)
-        { isRecurring: true },
-      ],
-    };
-
-    // Add userId filter if provided
-    if (userId) {
-      whereClause.userId = userId;
-    }
-
     const events = await prisma.event.findMany({
-      where: whereClause,
+      where: {
+        OR: [
+          // Non-recurring events that fall within the date range
+          {
+            startTime: { lte: endDate },
+            endTime: { gte: startDate },
+            recurrencePattern: 'None',
+          },
+          // All recurring events (we'll filter their occurrences later)
+          {
+            recurrencePattern: {
+              in: ['Daily', 'Weekly'],
+            },
+          },
+        ],
+      },
       include: {
         exceptions: true,
-        user: true, // Include user information
       },
     });
 
@@ -94,7 +60,7 @@ export class EventService {
     const occurrences: EventOccurrence[] = [];
 
     for (const event of events) {
-      if (!event.isRecurring) {
+      if (event.recurrencePattern === 'None') {
         // Add non-recurring event directly if it falls within the range
         if (event.startTime >= startDate && event.startTime <= endDate) {
           occurrences.push(this.mapToEventOccurrence(event));
@@ -107,69 +73,12 @@ export class EventService {
         event as EventWithExceptions,
         startDate,
         endDate,
-        timezone,
       );
 
       occurrences.push(...eventOccurrences);
     }
 
     return occurrences;
-  }
-
-  /**
-   * Check if an event conflicts with any existing events
-   */
-  async checkEventConflicts(
-    userId: string,
-    startTime: Date,
-    endTime: Date,
-    excludeEventId?: string,
-  ): Promise<boolean> {
-    // Get all events that might conflict
-    const events = await prisma.event.findMany({
-      where: {
-        userId,
-        id: excludeEventId ? { not: excludeEventId } : undefined,
-        OR: [
-          // Non-recurring events that might conflict
-          {
-            isRecurring: false,
-            AND: [{ startTime: { lt: endTime } }, { endTime: { gt: startTime } }],
-          },
-          // We'll check recurring events separately
-          { isRecurring: true },
-        ],
-      },
-      include: {
-        exceptions: true,
-      },
-    });
-
-    // Check for conflicts with each event
-    for (const event of events) {
-      if (!event.isRecurring) {
-        // Direct conflict check for non-recurring events
-        if (eventsConflict(startTime, endTime, event.startTime, event.endTime)) {
-          return true; // Conflict found
-        }
-      } else {
-        // For recurring events, generate occurrences and check each one
-        const occurrences = this.generateRecurringEventOccurrences(
-          event as EventWithExceptions,
-          new Date(startTime.getTime() - 24 * 60 * 60 * 1000), // 1 day before
-          new Date(endTime.getTime() + 24 * 60 * 60 * 1000), // 1 day after
-          event.timezone || 'UTC',
-        );
-
-        for (const occurrence of occurrences) {
-          if (eventsConflict(startTime, endTime, occurrence.startTime, occurrence.endTime)) {
-            return true; // Conflict found
-          }
-        }
-      }
-    }
-
-    return false; // No conflicts
   }
 
   /**
@@ -180,40 +89,47 @@ export class EventService {
     description?: string;
     startTime: Date;
     endTime: Date;
-    color: string;
     eventType: string;
-    timezone: string;
-    userId: string;
-    isRecurring: boolean;
-    recurrenceType?: string;
+    recurrencePattern: RecurrencePattern;
     recurrenceDays?: number[]; // 0=Sunday, 1=Monday, ... 6=Saturday
-  }): Promise<Event> {
-    // Check for conflicts before creating
-    const hasConflicts = await this.checkEventConflicts(
-      eventData.userId,
-      eventData.startTime,
-      eventData.endTime,
-    );
+  }): Promise<CalendarEvent> {
+    // Determine color based on event type
+    // If the eventType is one of our defined types, use the corresponding color
+    // Otherwise, use the default blue color
+    const color = Object.values(EVENT_TYPES).includes(eventData.eventType as EVENT_TYPES)
+      ? EVENT_COLORS[eventData.eventType as EVENT_TYPES]
+      : '#4285F4';
 
-    if (hasConflicts) {
-      throw new Error('Event conflicts with an existing event');
-    }
-
-    return prisma.event.create({
+    const event = await prisma.event.create({
       data: {
         title: eventData.title,
         description: eventData.description || null,
         startTime: eventData.startTime,
         endTime: eventData.endTime,
-        color: eventData.color,
+        color,
         eventType: eventData.eventType,
-        timezone: eventData.timezone || 'UTC',
-        userId: eventData.userId,
-        isRecurring: eventData.isRecurring,
-        recurrenceType: eventData.recurrenceType || null,
+        recurrencePattern: eventData.recurrencePattern,
         recurrenceDays: eventData.recurrenceDays ? eventData.recurrenceDays.join(',') : '',
       },
     });
+
+    // Map to CalendarEvent format
+    return {
+      id: event.id,
+      title: event.title,
+      description: event.description || undefined,
+      start: event.startTime,
+      end: event.endTime,
+      color: event.color,
+      eventType: event.eventType,
+      recurrence:
+        eventData.recurrencePattern !== 'None'
+          ? {
+              pattern: eventData.recurrencePattern,
+              daysOfWeek: eventData.recurrenceDays,
+            }
+          : undefined,
+    };
   }
 
   /**
@@ -226,56 +142,61 @@ export class EventService {
       description?: string | null;
       startTime?: Date;
       endTime?: Date;
-      color?: string;
       eventType?: string;
-      timezone?: string;
-      isRecurring?: boolean;
-      recurrenceType?: string | null;
+      recurrencePattern?: RecurrencePattern;
       recurrenceDays?: number[];
     },
-  ): Promise<Event> {
-    // If updating times, check for conflicts
-    if (eventData.startTime || eventData.endTime) {
-      const existingEvent = await this.getEventById(eventId);
-      if (!existingEvent) {
-        throw new Error('Event not found');
-      }
-
-      const startTime = eventData.startTime || existingEvent.startTime;
-      const endTime = eventData.endTime || existingEvent.endTime;
-
-      // Check for conflicts with other events
-      const hasConflicts = await this.checkEventConflicts(
-        existingEvent.userId,
-        startTime,
-        endTime,
-        eventId, // Exclude this event from conflict check
-      );
-
-      if (hasConflicts) {
-        throw new Error('Event conflicts with an existing event');
-      }
+  ): Promise<CalendarEvent> {
+    // Update color if event type is changing
+    let color: string | undefined;
+    if (eventData.eventType) {
+      // If the eventType is one of our defined types, use the corresponding color
+      // Otherwise, use the default blue color
+      color = Object.values(EVENT_TYPES).includes(eventData.eventType as EVENT_TYPES)
+        ? EVENT_COLORS[eventData.eventType as EVENT_TYPES]
+        : '#4285F4';
     }
 
     // Convert recurrenceDays array to string if provided
-    const updateData: any = { ...eventData };
+    const updateData: any = { ...eventData, color };
     if (updateData.recurrenceDays) {
       updateData.recurrenceDays = updateData.recurrenceDays.join(',');
     }
 
-    return prisma.event.update({
+    const event = await prisma.event.update({
       where: { id: eventId },
       data: updateData,
     });
+
+    // Map to CalendarEvent format
+    return {
+      id: event.id,
+      title: event.title,
+      description: event.description || undefined,
+      start: event.startTime,
+      end: event.endTime,
+      color: event.color,
+      eventType: event.eventType,
+      recurrence:
+        event.recurrencePattern !== 'None'
+          ? {
+              pattern: event.recurrencePattern as RecurrencePattern,
+              daysOfWeek: event.recurrenceDays
+                ? event.recurrenceDays.split(',').map(Number)
+                : undefined,
+            }
+          : undefined,
+    };
   }
 
   /**
    * Delete an event
    */
-  async deleteEvent(eventId: string): Promise<Event> {
-    return prisma.event.delete({
+  async deleteEvent(eventId: string): Promise<boolean> {
+    await prisma.event.delete({
       where: { id: eventId },
     });
+    return true;
   }
 
   /**
@@ -300,45 +221,16 @@ export class EventService {
   }
 
   /**
-   * Check if a date is a valid occurrence of a recurring event
-   */
-  async isValidEventOccurrence(event: Event, date: Date): Promise<boolean> {
-    if (!event.isRecurring || event.recurrenceType === RecurrenceType.NONE) {
-      // For non-recurring events, check if the date matches the event date
-      return isSameDay(event.startTime, date);
-    }
-
-    // Get the day of the week for the date
-    const dayOfWeek = getDay(date); // 0=Sunday, 1=Monday, ... 6=Saturday
-
-    // Check if this date should be included based on recurrence type
-    if (event.recurrenceType === RecurrenceType.DAILY) {
-      // For daily events, check if the date is on or after the start date
-      return date >= startOfDay(event.startTime);
-    } else if (event.recurrenceType === RecurrenceType.WEEKLY) {
-      // For weekly events, check if the day of the week is included and the date is on or after the start date
-      return (
-        event.recurrenceDays &&
-        event.recurrenceDays.split(',').map(Number).includes(dayOfWeek) &&
-        date >= startOfDay(event.startTime)
-      );
-    }
-
-    return false;
-  }
-
-  /**
    * Generate all occurrences of a recurring event within a date range
    */
   private generateRecurringEventOccurrences(
     event: EventWithExceptions,
     startDate: Date,
     endDate: Date,
-    timezone: string = 'UTC',
   ): EventOccurrence[] {
     const occurrences: EventOccurrence[] = [];
 
-    if (event.recurrenceType === RecurrenceType.NONE || !event.isRecurring) {
+    if (event.recurrencePattern === 'None') {
       return [];
     }
 
@@ -368,10 +260,10 @@ export class EventService {
       let shouldInclude = false;
 
       // Check if this occurrence should be included based on recurrence type
-      if (event.recurrenceType === RecurrenceType.DAILY) {
+      if (event.recurrencePattern === 'Daily') {
         shouldInclude = true;
       } else if (
-        event.recurrenceType === RecurrenceType.WEEKLY &&
+        event.recurrencePattern === 'Weekly' &&
         event.recurrenceDays &&
         event.recurrenceDays.split(',').map(Number).includes(currentDay)
       ) {
@@ -405,16 +297,19 @@ export class EventService {
                 originalEventId: event.id,
                 title: event.title,
                 description: event.description,
-                startTime: exception.newStartTime,
-                endTime: exception.newEndTime,
+                start: exception.newStartTime,
+                end: exception.newEndTime,
                 color: event.color,
                 eventType: event.eventType,
-                timezone: event.timezone || timezone,
                 isRecurring: true,
                 isException: true,
                 exceptionId: exception.id,
-                userId: event.userId,
-                userName: event.user?.name,
+                recurrence: {
+                  pattern: event.recurrencePattern as RecurrencePattern,
+                  daysOfWeek: event.recurrenceDays
+                    ? event.recurrenceDays.split(',').map(Number)
+                    : undefined,
+                },
               });
             }
           } else {
@@ -424,15 +319,18 @@ export class EventService {
               originalEventId: event.id,
               title: event.title,
               description: event.description,
-              startTime: occurrenceDate,
-              endTime: occurrenceEndDate,
+              start: occurrenceDate,
+              end: occurrenceEndDate,
               color: event.color,
               eventType: event.eventType,
-              timezone: event.timezone || timezone,
               isRecurring: true,
               isException: false,
-              userId: event.userId,
-              userName: event.user?.name,
+              recurrence: {
+                pattern: event.recurrencePattern as RecurrencePattern,
+                daysOfWeek: event.recurrenceDays
+                  ? event.recurrenceDays.split(',').map(Number)
+                  : undefined,
+              },
             });
           }
         }
@@ -448,21 +346,27 @@ export class EventService {
   /**
    * Map a database Event to an EventOccurrence
    */
-  private mapToEventOccurrence(event: any): EventOccurrence {
+  private mapToEventOccurrence(event: Event): EventOccurrence {
     return {
       id: event.id,
       originalEventId: event.id,
       title: event.title,
       description: event.description,
-      startTime: event.startTime,
-      endTime: event.endTime,
+      start: event.startTime,
+      end: event.endTime,
       color: event.color,
       eventType: event.eventType,
-      timezone: event.timezone || 'UTC',
-      isRecurring: event.isRecurring,
+      isRecurring: event.recurrencePattern !== 'None',
       isException: false,
-      userId: event.userId,
-      userName: event.user?.name,
+      recurrence:
+        event.recurrencePattern !== 'None'
+          ? {
+              pattern: event.recurrencePattern as RecurrencePattern,
+              daysOfWeek: event.recurrenceDays
+                ? event.recurrenceDays.split(',').map(Number)
+                : undefined,
+            }
+          : undefined,
     };
   }
 }

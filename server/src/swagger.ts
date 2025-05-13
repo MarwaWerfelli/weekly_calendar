@@ -18,34 +18,9 @@ const options: swaggerJsdoc.Options = {
     ],
     components: {
       schemas: {
-        User: {
+        CalendarEvent: {
           type: 'object',
-          required: ['name', 'email'],
-          properties: {
-            id: {
-              type: 'string',
-              description: 'Auto-generated UUID',
-            },
-            name: {
-              type: 'string',
-            },
-            email: {
-              type: 'string',
-              format: 'email',
-            },
-            createdAt: {
-              type: 'string',
-              format: 'date-time',
-            },
-            updatedAt: {
-              type: 'string',
-              format: 'date-time',
-            },
-          },
-        },
-        Event: {
-          type: 'object',
-          required: ['title', 'startTime', 'endTime', 'userId'],
+          required: ['title', 'start', 'end', 'eventType'],
           properties: {
             id: {
               type: 'string',
@@ -58,52 +33,41 @@ const options: swaggerJsdoc.Options = {
               type: 'string',
               nullable: true,
             },
-            startTime: {
+            start: {
               type: 'string',
               format: 'date-time',
             },
-            endTime: {
+            end: {
               type: 'string',
               format: 'date-time',
             },
             color: {
               type: 'string',
-              default: 'blue',
-              enum: ['blue', 'green', 'orange'],
+              description: 'Color code for the event (e.g., #4285F4)',
             },
             eventType: {
               type: 'string',
-              default: 'Work',
               enum: ['Work', 'Personal', 'Meeting'],
             },
-            timezone: {
-              type: 'string',
-              default: 'UTC',
-            },
-            userId: {
-              type: 'string',
-            },
-            isRecurring: {
-              type: 'boolean',
-              default: false,
-            },
-            recurrenceType: {
-              type: 'string',
-              enum: ['NONE', 'DAILY', 'WEEKLY'],
+            recurrence: {
+              type: 'object',
               nullable: true,
-            },
-            recurrenceDays: {
-              type: 'string',
-              description: 'Comma-separated list of days (0=Sunday, 1=Monday, ... 6=Saturday)',
-              default: '',
-            },
-            createdAt: {
-              type: 'string',
-              format: 'date-time',
-            },
-            updatedAt: {
-              type: 'string',
-              format: 'date-time',
+              properties: {
+                pattern: {
+                  type: 'string',
+                  enum: ['None', 'Daily', 'Weekly'],
+                },
+                daysOfWeek: {
+                  type: 'array',
+                  items: {
+                    type: 'integer',
+                    minimum: 0,
+                    maximum: 6,
+                  },
+                  description:
+                    'Days of week for weekly recurrence (0=Sunday, 1=Monday, ... 6=Saturday)',
+                },
+              },
             },
           },
         },

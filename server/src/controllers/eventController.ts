@@ -1,7 +1,8 @@
 import { Request, Response } from 'express';
-import { EventService, RecurrenceType } from '../services/eventService';
+import { EventService } from '../services/eventService';
 import { parseISO } from 'date-fns';
 import { fromUTC, toUTC, getWeekBounds } from '../utils/dateUtils';
+import { EVENT_COLORS, EVENT_TYPES, RecurrencePattern } from '../models/type';
 
 const eventService = new EventService();
 
@@ -11,8 +12,6 @@ export class EventController {
    */
   async getWeekEvents(req: Request, res: Response) {
     try {
-      const userId = (req.query.userId as string) || null;
-
       // Get date from query or use current date
       let date = new Date();
       if (req.query.date) {
@@ -25,7 +24,7 @@ export class EventController {
       // Get the start and end of the week with timezone consideration
       const { start, end } = getWeekBounds(date, timezone, 0); // 0 = Sunday
 
-      const events = await eventService.getEventsByDateRange(userId, start, end, timezone);
+      const events = await eventService.getEventsByDateRange(start, end);
 
       // Format the week range for display
       const formattedStart = fromUTC(start, timezone);
@@ -55,17 +54,13 @@ export class EventController {
         description,
         startTime,
         endTime,
-        color,
         eventType,
-        userId,
-        isRecurring,
-        recurrenceType,
-        recurrenceDays,
+        recurrence,
         timezone = 'UTC',
       } = req.body;
 
       // Validate required fields
-      if (!title || !startTime || !endTime || !userId) {
+      if (!title || !startTime || !endTime) {
         return res.status(400).json({ error: 'Missing required fields' });
       }
 
@@ -80,31 +75,12 @@ export class EventController {
 
       // Validate recurrence data
       if (
-        isRecurring &&
-        recurrenceType === 'WEEKLY' &&
-        (!recurrenceDays || recurrenceDays.length === 0)
+        recurrence?.pattern === 'Weekly' &&
+        (!recurrence.daysOfWeek || recurrence.daysOfWeek.length === 0)
       ) {
         return res
           .status(400)
           .json({ error: 'Weekly recurring events must specify at least one day of the week' });
-      }
-
-      // Set color based on event type if not explicitly provided
-      let eventColor = color;
-      if (!eventColor) {
-        switch (eventType) {
-          case 'Work':
-            eventColor = 'blue';
-            break;
-          case 'Personal':
-            eventColor = 'green';
-            break;
-          case 'Meeting':
-            eventColor = 'orange';
-            break;
-          default:
-            eventColor = 'blue';
-        }
       }
 
       // Create the event
@@ -113,15 +89,9 @@ export class EventController {
         description,
         startTime: parsedStartTime,
         endTime: parsedEndTime,
-        color: eventColor,
-        eventType: eventType || 'Work',
-        timezone,
-        userId,
-        isRecurring: isRecurring || false,
-        recurrenceType: recurrenceType
-          ? RecurrenceType[recurrenceType as keyof typeof RecurrenceType]
-          : undefined,
-        recurrenceDays: recurrenceDays || [],
+        eventType: eventType || EVENT_TYPES.WORK,
+        recurrencePattern: recurrence?.pattern || 'None',
+        recurrenceDays: recurrence?.daysOfWeek || [],
       });
 
       return res.status(201).json(event);
@@ -137,26 +107,15 @@ export class EventController {
   async updateEvent(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      const {
-        title,
-        description,
-        startTime,
-        endTime,
-        color,
-        eventType,
-        isRecurring,
-        recurrenceType,
-        recurrenceDays,
-        timezone,
-      } = req.body;
+      const { title, description, startTime, endTime, eventType, recurrence, timezone } = req.body;
 
-      // Get the existing event to get its timezone if not provided
+      // Get the existing event
       const existingEvent = await eventService.getEventById(id);
       if (!existingEvent) {
         return res.status(404).json({ error: 'Event not found' });
       }
 
-      const eventTimezone = timezone || existingEvent.timezone || 'UTC';
+      const eventTimezone = timezone || 'UTC';
 
       // Parse dates if provided with timezone consideration
       let parsedStartTime: Date | undefined;
@@ -177,30 +136,13 @@ export class EventController {
 
       // Validate recurrence data
       if (
-        isRecurring &&
-        recurrenceType === 'WEEKLY' &&
-        recurrenceDays &&
-        recurrenceDays.length === 0
+        recurrence?.pattern === 'Weekly' &&
+        recurrence.daysOfWeek &&
+        recurrence.daysOfWeek.length === 0
       ) {
         return res
           .status(400)
           .json({ error: 'Weekly recurring events must specify at least one day of the week' });
-      }
-
-      // Set color based on event type if changing event type but not color
-      let eventColor = color;
-      if (!eventColor && eventType && eventType !== existingEvent.eventType) {
-        switch (eventType) {
-          case 'Work':
-            eventColor = 'blue';
-            break;
-          case 'Personal':
-            eventColor = 'green';
-            break;
-          case 'Meeting':
-            eventColor = 'orange';
-            break;
-        }
       }
 
       // Create the update data
@@ -209,19 +151,13 @@ export class EventController {
       if (description !== undefined) updateData.description = description;
       if (parsedStartTime) updateData.startTime = parsedStartTime;
       if (parsedEndTime) updateData.endTime = parsedEndTime;
-      if (eventColor) updateData.color = eventColor;
       if (eventType) updateData.eventType = eventType;
-      if (timezone) updateData.timezone = timezone;
-      if (isRecurring !== undefined) updateData.isRecurring = isRecurring;
 
-      if (recurrenceType !== undefined) {
-        updateData.recurrenceType = recurrenceType
-          ? RecurrenceType[recurrenceType as keyof typeof RecurrenceType]
-          : null;
-      }
-
-      if (recurrenceDays) {
-        updateData.recurrenceDays = recurrenceDays;
+      if (recurrence) {
+        updateData.recurrencePattern = recurrence.pattern;
+        if (recurrence.daysOfWeek) {
+          updateData.recurrenceDays = recurrence.daysOfWeek;
+        }
       }
 
       // Update the event
@@ -241,9 +177,9 @@ export class EventController {
     try {
       const { id } = req.params;
 
-      const deletedEvent = await eventService.deleteEvent(id);
+      const success = await eventService.deleteEvent(id);
 
-      return res.json(deletedEvent);
+      return res.json({ success });
     } catch (error) {
       console.error('Error deleting event:', error);
       return res.status(500).json({ error: 'Failed to delete event' });
@@ -262,17 +198,17 @@ export class EventController {
         return res.status(400).json({ error: 'Exception date is required' });
       }
 
-      // Get the event to get its timezone if not provided
+      // Get the event
       const event = await eventService.getEventById(eventId);
       if (!event) {
         return res.status(404).json({ error: 'Event not found' });
       }
 
-      if (!event.isRecurring) {
+      if (event.recurrencePattern === 'None') {
         return res.status(400).json({ error: 'Cannot create exception for non-recurring event' });
       }
 
-      const eventTimezone = timezone || event.timezone || 'UTC';
+      const eventTimezone = timezone || 'UTC';
 
       // Parse dates with timezone consideration
       const parsedExceptionDate = toUTC(exceptionDate, eventTimezone);
@@ -293,18 +229,6 @@ export class EventController {
         if (parsedNewEndTime <= parsedNewStartTime) {
           return res.status(400).json({ error: 'New end time must be after new start time' });
         }
-      }
-
-      // Check if the exception date is valid for this recurring event
-      const isValidOccurrence = await eventService.isValidEventOccurrence(
-        event,
-        parsedExceptionDate,
-      );
-
-      if (!isValidOccurrence) {
-        return res.status(400).json({
-          error: 'The specified date is not a valid occurrence of this recurring event',
-        });
       }
 
       const exception = await eventService.createEventException(
